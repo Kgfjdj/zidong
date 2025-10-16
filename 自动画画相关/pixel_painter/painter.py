@@ -57,12 +57,12 @@ class PixelPainter:
         if not self.grid_start or not self.grid_end:
             raise Exception("画板未校准")
         
-        # left, top = self.grid_start
-        # right, bottom = self.grid_end
+        win32_left, win32_top = self.grid_start
+        win32_right, win32_bottom = self.grid_end
 
-        SCALE_FACTOR = 1.5
-        win32_left, win32_top = [544,277]
-        win32_right, win32_bottom = [1129,862]
+        # SCALE_FACTOR = 1.5
+        # win32_left, win32_top = [544,277]
+        # win32_right, win32_bottom = [1129,862]
 
         # win32_left, win32_top = [round(left/SCALE_FACTOR),round(top/SCALE_FACTOR)]
         # win32_right, win32_bottom = [round(right/SCALE_FACTOR),round(bottom/SCALE_FACTOR)]
