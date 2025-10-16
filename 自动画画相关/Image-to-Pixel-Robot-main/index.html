@@ -1,0 +1,1436 @@
+<!DOCTYPE html>
+<!-- 
+  index.html - Main interface for the Image-to-Pixel Art Converter
+  
+  PURPOSE:
+  This is the primary user interface for converting images to pixel art.
+  It's designed for generating training data for ML models that need to
+  understand pixel art transformations.
+  
+  ARCHITECTURE:
+  - Uses vanilla JavaScript for maximum compatibility
+  - Canvas-based rendering for real-time pixelation preview
+  - Integrates with image-to-pixel.js for core processing algorithms
+  - Supports multiple dithering methods and color palettes
+  
+  CONNECTIONS:
+  - Loads image-to-pixel.js for pixelation algorithms
+  - Loads src/picker.js for color palette management
+  - Loads src/logo.js for branding elements
+  - Styles from css/main.css, css/logo.css, css/picker.css
+  
+  TRAINING DATA GENERATION:
+  - Supports batch processing via file upload
+  - Exports in PNG format suitable for ML training
+  - Preserves metadata about transformation parameters
+-->
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>🎨 Image-to-Pixel - Training Data Generator</title>
+  <!-- Include Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+    crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <!-- Google Fonts for Modern Typography -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" type="text/css" href="css/logo.css">
+  <link rel="stylesheet" type="text/css" href="css/main.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/themes/nano.min.css" />
+  <link rel="stylesheet" type="text/css" href="css/picker.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-hover) var(--color-primary)
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--color-primary)
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background-color: var(--color-hover);
+      border-radius: 4px;
+      border: 2px solid var(--color-primary)
+    }
+
+    .setting-group {
+      position: relative;
+    }
+
+    .toggle-btn {
+      position: absolute;
+      top: 5px;
+      right: 5px;
+      width: 30px !important;
+      height: 17px !important;
+      background-color: var(--color-background) !important;
+      border: none;
+      border-radius: 10px;
+      outline: none;
+      cursor: pointer;
+      transition: background-color 0.3s;
+      padding: 9px 16px !important;
+    }
+
+    .toggle-btn.active {
+      background-color: var(--color-accent) !important;
+    }
+
+    .toggle-thumb {
+      position: absolute;
+      top: 3px;
+      left: 2px;
+      width: 12px;
+      height: 12px;
+      background-color: var(--color-text);
+      border-radius: 50%;
+      transition: 0.3s;
+      pointer-events: none;
+      margin: 0 !important;
+      padding: 0px !important;
+    }
+
+    .toggle-btn.active .toggle-thumb {
+      left: 16px;
+      background-color: white;
+    }
+
+    #paletteSelector {
+      display: none;
+    }
+
+    #color-info {
+      position: fixed;
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 12px;
+      border-radius: 8px;
+      pointer-events: none;
+      font-size: 14px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 容器样式 - 允许滚动 */
+    .canvas-wrapper {
+      position: relative;
+      overflow: auto;
+      /* ⭐ 重要：允许滚动查看缩放后的内容 */
+      border: 1px solid #ccc;
+      background: #f5f5f5;
+      max-height: 80vh;
+      max-width: 100%;
+      /* ⭐ 为 transform 缩放后的内容留出空间 */
+      /* display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px; */
+    }
+
+    #canvas {
+      display: block;
+      cursor: crosshair;
+      /* ⭐ 设置变换原点为中心 */
+      transform-origin: top left;
+      /* transform-origin: center center; */
+      /* ⭐ 平滑过渡效果 */
+      transition: transform 0.3s ease;
+      image-rendering: pixelated;
+      image-rendering: -moz-crisp-edges;
+      image-rendering: crisp-edges;
+      margin: 20px;
+    }
+
+    #color-preview {
+      width: 40px;
+      height: 40px;
+      border: 2px solid white;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+
+    #color-text {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 13px;
+    }
+
+    /* 缩放控制器 */
+    #zoom-controls {
+      position: fixed;
+      /* ⭐ 固定在视口 */
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 10px 15px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      z-index: 999;
+    }
+
+    #zoom-controls button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      width: 36px;
+      height: 36px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 20px;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+
+    #zoom-controls button:hover {
+      background: #45a049;
+    }
+
+    #zoom-controls button:active {
+      transform: scale(0.95);
+    }
+
+    #zoom-level {
+      color: white;
+      font-size: 14px;
+      min-width: 55px;
+      text-align: center;
+      font-weight: bold;
+    }
+
+    #zoom-reset {
+      background: #ff9800 !important;
+      width: auto !important;
+      padding: 0 14px;
+      font-size: 14px !important;
+    }
+
+    #zoom-reset:hover {
+      background: #f57c00 !important;
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <div id="logo-container" aria-label="Image-to-Pixel Logo">
+    </div>
+    <div class="download-buttons">
+      <button id="downloadFull" title="Download Full Resolution">
+        <i class="fas fa-download"></i>
+      </button>
+      <button id="downloadPixel" title="Download Pixelated Image">
+        <i class="fas fa-file-image"></i>
+      </button>
+    </div>
+  </header>
+  <div class="container">
+    <!-- Pixelate -->
+    <div class="tool-panel">
+      <!-- Pixelate -->
+      <button id="pixelateButton">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> Pixelate
+      </button>
+      <button title="auto refresh" id="autoPixelateToggle" class="toggle-btn" aria-pressed="false">
+        <span class="toggle-thumb"></span>
+      </button>
+
+      <!-- 选择参数 -->
+      <div class="settings">
+        <!-- Pixel Width -->
+        <div class="setting-group">
+          <label for="pixel-data">
+            <i class="fa-solid fa-chevron-down"></i>
+            Pixel Width</label>
+          <div id="pixel-data" class="input-group">
+            <select id="pixelWidthSelector">
+              <option value="16">16</option>
+              <option value="32">32</option>
+              <option value="64">64</option>
+              <option value="128" selected>128</option>
+              <option value="256">256</option>
+            </select>
+            <div class="span-group">
+              <span>Custom:</span>
+              <input type="text" id="pixelWidthInput" value="128">
+              <button id="autoDetectButton" title="Auto Detect Image Width">Auto Detect</button>
+            </div>
+          </div>
+        </div>
+        <div class="setting-group">
+          <label for="dither-data">
+            <i class="fa-solid fa-chevron-down"></i>
+            Dither Type</label>
+          <div id="dither-data" class="input-group">
+            <select id="dithering">
+              <option value="none">None</option>
+              <option value="atkinson">Atkinson</option>
+              <option value="Floyd-Steinberg">Floyd-Steinberg</option>
+              <option value="2x2 Bayer">2x2 Bayer</option>
+              <option value="4x4 Bayer" selected>4x4 Bayer</option>
+              <option value="ordered">Ordered 8x8</option>
+              <option value="Clustered 4x4">Clustered 4x4</option>
+            </select>
+            <div class="slider-container">
+              <span>Strength</span>
+              <input type="range" id="ditheringStrength" min="0" max="100" value="10">
+            </div>
+          </div>
+        </div>
+        <div class="setting-group">
+          <label for="main-container">
+            <i class="fa-solid fa-chevron-down"></i>
+            Palette</label>
+          <button id="palette-toggle" class="toggle-btn active" aria-pressed="true">
+            <span class="toggle-thumb"></span>
+          </button>
+          <div id="main-container" class="main-container">
+            <div class="palette-switcher">
+              <div class="palette-list-wrapper">
+                <h4>Default</h4>
+                <select id="default-palette-selector"></select>
+              </div>
+              <div class="palette-list-wrapper">
+                <h4>Custom</h4>
+                <select id="custom-palette-selector">
+                  <option value="none">None</option>
+                </select>
+              </div>
+            </div>
+            <input type="text" id="palette-name-input" placeholder="Enter palette name" />
+            <div class="color-list">
+              <div id="selected-colors"></div>
+            </div>
+            <div class="controls">
+              <button id="add-color-button">Add Color</button>
+              <button id="save-palette-button" class="save-button">Save</button>
+              <button id="delete-palette-button" class="delete-button">Delete</button>
+            </div>
+            <button id="upload-palette-button">Upload Palette</button>
+            <button id="download-palette-button">Download Palette</button>
+            <input type="file" id="palette-file-input" style="display:none" accept=".json">
+            <div id="hidden-picker"></div>
+          </div>
+        </div>
+        <div title="the slug is the last part of the lospec URL-EX: https://lospec.com/palette-list/rgbg-36"
+          class="setting-group">
+          <button id="lospec-toggle" class="toggle-btn" aria-pressed="false">
+            <span class="toggle-thumb"></span>
+          </button>
+          </button>
+          <label for="palette-input">
+            <i class="fa-solid fa-chevron-down"></i>
+            Lospec Palette</label>
+          <div id="palette-input" class="input-group">
+
+            <select id="paletteSelector">
+              <option value="rgbg-36" selected>rgbg-36</option>
+            </select>
+            <div class="span-group">
+              <span>Slug:</span>
+              <input type="text" id="paletteInput" value="rgbg-36">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="main-content">
+      <div id="dropzone"
+        style="position: fixed; top: 0; right: 50px;width: 50px;height: 30px;margin: 0;background-color: aqua;">
+        <p>Drop an image or click to upload</p>
+      </div>
+      <div id="target-dropzone" class="dropzone-extra">
+        <p>Drop a target style image here</p>
+        <span id="palette-info"></span>
+      </div>
+      <div class="canvas-wrapper">
+        <canvas id="canvas"></canvas>
+        <!-- ⭐ 添加颜色信息显示框 -->
+        <div id="color-info" style="display:none;">
+          <div id="color-preview"></div>
+          <div id="color-text"></div>
+        </div>
+        <!-- ⭐ 添加缩放控制 -->
+        <div id="zoom-controls">
+          <button id="zoom-out" title="缩小 (-)">−</button>
+          <span id="zoom-level">100%</span>
+          <button id="zoom-in" title="放大 (+)">+</button>
+          <button id="zoom-reset" title="重置 (R)">重置</button>
+        </div>
+      </div>
+      <input type="file" id="fileInput" style="display:none" accept="image/*">
+      <input type="file" id="target-file-input" style="display:none" accept="image/*">
+      <button
+        style="position: fixed;top: 0;right: 0;width: 50px;height: 20px;line-height: 20px;font-size: 13px;padding: 0;"
+        onclick="exportPixelData()">导出</button>
+    </div>
+  </div>
+  <script src="src/logo.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@simonwep/pickr/dist/pickr.min.js"></script>
+  <script src="src/picker.js"></script>
+  <script src="image-to-pixel.js"></script>
+  <script>
+    /**
+     * UI Interaction Controller
+     * 
+     * This script manages all user interface interactions including:
+     * - Collapsible settings panels (chevron toggles)
+     * - Image upload and display
+     * - Pixelation parameter controls
+     * - Export functionality for training data
+     * 
+     * STATE MANAGEMENT:
+     * - originalImageObject: Stores the uploaded image for processing
+     * - pixelatedCanvas: Stores the processed result for export
+     * - autoPixelateEnabled: Controls real-time preview updates
+     * - activeToggle: Tracks which palette source is active
+     * 
+     * CRITICAL FOR TRAINING DATA:
+     * The consistency of parameters across batch processing is essential
+     * for generating coherent training datasets.
+     */
+    document.querySelectorAll('label[for]').forEach(label => {
+      label.onclick = () => {
+        const targetId = label.getAttribute('for');
+        const targetElement = document.getElementById(targetId);
+        const chevron = label.querySelector('.fa-chevron-down, .fa-chevron-right');
+
+        if (targetElement) {
+          if (!targetElement.style.maxHeight) {
+            targetElement.style.maxHeight = targetElement.scrollHeight + 'px';
+          }
+
+          const isHidden = targetElement.style.maxHeight === '0px';
+          targetElement.style.maxHeight = isHidden ? targetElement.scrollHeight + 'px' : '0px';
+          targetElement.style.overflow = 'hidden';  // Ensure content doesn't overflow
+
+          if (chevron) {
+            chevron.classList.toggle('fa-chevron-right', !isHidden);
+            chevron.classList.toggle('fa-chevron-down', isHidden);
+          }
+        }
+      };
+    });
+
+    /**
+     * Auto-detect image dimensions for optimal pixelation.
+     * 
+     * This feature is crucial for training data generation as it ensures
+     * the pixel grid aligns naturally with the source image dimensions,
+     * preventing artifacts that could confuse ML models.
+     */
+    const autoDetectButton = document.getElementById('autoDetectButton');
+    autoDetectButton.addEventListener('click', () => {
+      if (originalImageObject) {
+        const imageWidth = originalImageObject.width;
+        pixelWidthInput.value = imageWidth;
+        pixelWidthSelector.value = imageWidth;
+        console.log(`Detected image width: ${imageWidth}px`);
+
+        if (autoPixelateEnabled) applyPixelation();
+      } else {
+        console.warn("No image detected. Please upload an image first.");
+      }
+    });
+
+
+
+    let activeToggle = document.getElementById('palette-toggle');
+    const autoPixelateToggle = document.getElementById('autoPixelateToggle');
+
+    const toggles = document.querySelectorAll('.toggle-btn');
+
+    autoPixelateToggle.classList.toggle('active', autoPixelateEnabled);
+    autoPixelateToggle.setAttribute('aria-pressed', autoPixelateEnabled.toString());
+
+    toggles.forEach(toggle => {
+      toggle.addEventListener('click', function () {
+        if (this.id === 'autoPixelateToggle') {
+          autoPixelateEnabled = !autoPixelateEnabled;
+          this.classList.toggle('active', autoPixelateEnabled);
+          this.setAttribute('aria-pressed', autoPixelateEnabled.toString());
+          return;
+        }
+
+        if (activeToggle !== this) {
+          toggles.forEach(btn => {
+            if (btn.id !== 'autoPixelateToggle') {
+              btn.classList.remove('active');
+              btn.setAttribute('aria-pressed', 'false');
+            }
+          });
+
+          this.classList.add('active');
+          this.setAttribute('aria-pressed', 'true');
+          activeToggle = this;
+        } else {
+          this.classList.remove('active');
+          this.setAttribute('aria-pressed', 'false');
+          activeToggle = null;
+        }
+      });
+    });
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const targetDropzone = document.getElementById('target-dropzone');
+    const targetFileInput = document.getElementById('target-file-input');
+    const paletteInfo = document.getElementById('palette-info');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const pixelateButton = document.getElementById('pixelateButton');
+    const downloadFullButton = document.getElementById('downloadFull');
+    const downloadPixelButton = document.getElementById('downloadPixel');
+    const pixelWidthInput = document.getElementById('pixelWidthInput');
+    const paletteNameInput = document.getElementById('paletteInput');
+    const ditheringSelect = document.getElementById('dithering');
+    const ditheringStrengthInput = document.getElementById('ditheringStrength');
+
+    pixelWidthSelector.addEventListener('change', () => {
+      pixelWidthInput.value = pixelWidthSelector.value;
+    });
+    pixelWidthInput.addEventListener('input', () => {
+      pixelWidthSelector.value = pixelWidthInput.value;
+    });
+
+    const paletteSelector = document.getElementById('paletteSelector');
+    paletteSelector.addEventListener('change', () => {
+      paletteNameInput.value = paletteSelector.value;
+    });
+    paletteNameInput.addEventListener('input', () => {
+      paletteSelector.value = paletteNameInput.value;
+    });
+
+    let originalImageObject = null;
+    let pixelatedCanvas = null;
+    let customPaletteFromImage = null;
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    targetDropzone.addEventListener('click', () => targetFileInput.click());
+
+    fileInput.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (file) displayImage(file);
+    });
+
+    dropzone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      dropzone.style.borderColor = '#0084ff';
+    });
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.style.borderColor = '#cccccc';
+    });
+    dropzone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      dropzone.style.borderColor = '#cccccc';
+      const files = event.dataTransfer.files;
+      if (files.length) displayImage(files[0]);
+    });
+
+    targetFileInput.addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      if (file) handleTargetImage(file);
+    });
+
+    targetDropzone.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      targetDropzone.style.borderColor = '#0084ff';
+    });
+
+    targetDropzone.addEventListener('dragleave', () => {
+      targetDropzone.style.borderColor = '#cccccc';
+    });
+
+    targetDropzone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      targetDropzone.style.borderColor = '#cccccc';
+      const files = event.dataTransfer.files;
+      if (files.length) handleTargetImage(files[0]);
+    });
+
+    function handleTargetImage(file) {
+      extractPaletteFromImage(file).then(palette => {
+        customPaletteFromImage = palette;
+        paletteInfo.textContent = `${palette.length} colors`;
+
+        // Add or update the custom palette option in the dropdown
+        const customSelector = document.getElementById('custom-palette-selector');
+        let option = customSelector.querySelector('option[value="from-image"]');
+        if (!option) {
+          option = document.createElement('option');
+          option.value = 'from-image';
+          option.textContent = 'From Target Image';
+          customSelector.appendChild(option);
+        }
+        customSelector.value = 'from-image';
+
+        // Manually set the activePalette and trigger a re-pixelation
+        activePalette = customPaletteFromImage;
+        // Deactivate other toggles
+        toggles.forEach(btn => {
+          if (btn.id !== 'autoPixelateToggle' && btn.id !== 'palette-toggle') {
+            btn.classList.remove('active');
+            btn.setAttribute('aria-pressed', 'false');
+          }
+        });
+        const paletteToggle = document.getElementById('palette-toggle');
+        if (!paletteToggle.classList.contains('active')) {
+          paletteToggle.classList.add('active');
+          paletteToggle.setAttribute('aria-pressed', 'true');
+        }
+        activeToggle = paletteToggle;
+
+        // Update the color list UI
+        activePalette = customPaletteFromImage.map(rgb => {
+          return `#${rgb.map(c => c.toString(16).padStart(2, '0')).join('')}`;
+        });
+        updateColorList();
+
+
+        if (autoPixelateEnabled) applyPixelation();
+      }).catch(error => {
+        console.error("Error extracting palette:", error);
+        paletteInfo.textContent = "Error";
+      });
+    }
+
+    async function extractPaletteFromImage(file) {
+      const image = await loadOriginalImage(file);
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = image.width;
+      tempCanvas.height = image.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(image, 0, 0);
+
+      const imageData = tempCtx.getImageData(0, 0, image.width, image.height).data;
+      const colorSet = new Set();
+
+      for (let i = 0; i < imageData.length; i += 4) {
+        // Ignore transparent pixels
+        if (imageData[i + 3] === 0) continue;
+        colorSet.add(`${imageData[i]},${imageData[i + 1]},${imageData[i + 2]}`);
+      }
+
+      return Array.from(colorSet).map(rgbString => {
+        return rgbString.split(',').map(num => parseInt(num, 10));
+      });
+    }
+
+
+    /**
+     * Display uploaded image in the canvas with proper scaling.
+     * 
+     * This function is called when a user uploads an image via drag-drop
+     * or file picker. It's the entry point for the conversion pipeline.
+     * 
+     * PROCESS FLOW:
+     * 1. Read file as data URL
+     * 2. Create Image object for processing
+     * 3. Calculate display dimensions maintaining aspect ratio
+     * 4. Render to canvas for preview
+     * 
+     * @param {File} file - The image file uploaded by the user
+     */
+    function displayImage(file) {
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const image = new Image();
+        image.onload = function () {
+          originalImageObject = image;
+
+          const container = document.querySelector('.canvas-wrapper');
+          const containerWidth = container.clientWidth;
+          const containerHeight = container.clientHeight;
+          const imageAspectRatio = image.width / image.height;
+
+          let canvasWidth, canvasHeight;
+
+          if (containerWidth / containerHeight > imageAspectRatio) {
+            canvasHeight = containerHeight;
+            canvasWidth = canvasHeight * imageAspectRatio;
+          } else {
+            canvasWidth = containerWidth;
+            canvasHeight = canvasWidth / imageAspectRatio;
+          }
+
+          canvas.width = canvasWidth;
+          canvas.height = canvasHeight;
+          ctx.imageSmoothingEnabled = false;
+          canvas.style.imageRendering = 'pixelated';
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.imageSmoothingEnabled = true;
+          ctx.drawImage(
+            image,
+            0, 0, image.width, image.height,
+            0, 0, canvas.width, canvas.height
+          );
+          canvas.style.imageRendering = 'auto';
+          canvas.style.display = 'block';
+          dropzone.classList.add('active');
+        };
+        image.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    /**
+     * Apply pixelation transformation to the loaded image.
+     * 
+     * This is the core function that orchestrates the pixelation process.
+     * It gathers all user-configured parameters and calls the pixelate()
+     * function from image-to-pixel.js.
+     * 
+     * PARAMETERS COLLECTED:
+     * - pixelsWide: Target pixel width for the output
+     * - paletteName: Lospec palette slug if using external palette
+     * - ditheringMethod: Algorithm for color approximation
+     * - ditheringStrength: Intensity of dithering effect (0-100)
+     * - activePalette: Currently selected color palette
+     * 
+     * CRITICAL FOR TRAINING DATA:
+     * Consistency in these parameters across batches is essential
+     * for generating coherent training datasets.
+     * 
+     * @returns {Promise<void>} Renders result to canvas when complete
+     */
+    async function applyPixelation() {
+      if (!originalImageObject) return;
+      const pixelsWide = parseInt(pixelWidthInput.value) || 10;
+      const paletteName = paletteNameInput.value.trim();
+      const ditheringMethod = ditheringSelect.value;
+      const ditheringStrength = parseInt(ditheringStrengthInput.value); // Strength is 0-100
+
+      let paletteToUse;
+      if (activeToggle && activeToggle.id === 'lospec-toggle') {
+        paletteToUse = paletteName;
+      } else {
+        paletteToUse = activePalette;
+      }
+
+      const options = {
+        image: originalImageObject,
+        width: pixelsWide,
+        dither: ditheringMethod,
+        strength: ditheringStrength,
+        palette: paletteToUse,
+        resolution: 'pixel',
+      };
+
+      // try {
+      //   const resultCanvas = await pixelate(options);
+      //   pixelatedCanvas = resultCanvas;
+
+      //   // ⭐ 保存像素数据
+      //   window.currentPixelData = resultCanvas.pixelData;
+      //   console.log('res', resultCanvas.pixelData);
+      //   // return;
+
+      //   const container = document.querySelector('.canvas-wrapper');
+      //   const containerWidth = container.clientWidth;
+      //   const containerHeight = container.clientHeight;
+      //   const imageAspectRatio = resultCanvas.width / resultCanvas.height;
+
+      //   let canvasWidth, canvasHeight;
+
+      //   if (containerWidth / containerHeight > imageAspectRatio) {
+      //     canvasHeight = containerHeight;
+      //     canvasWidth = canvasHeight * imageAspectRatio;
+      //   } else {
+      //     canvasWidth = containerWidth;
+      //     canvasHeight = canvasWidth / imageAspectRatio;
+      //   }
+
+      //   canvas.width = canvasWidth;
+      //   canvas.height = canvasHeight;
+
+      //   ctx.clearRect(0, 0, canvas.width, canvas.height);
+      //   ctx.imageSmoothingEnabled = false; // Disable smoothing for pixelated image
+      //   ctx.drawImage(resultCanvas, 0, 0, canvas.width, canvas.height);
+
+      //   // ⭐ 在这里添加网格绘制代码
+      //   drawPixelGrid(ctx, resultCanvas, canvas.width, canvas.height);
+
+      //   resultCanvas.style.imageRendering = 'pixelated'; // Crisp pixel rendering
+      //   canvas.style.display = 'block';
+      // } catch (error) {
+      //   console.error(error);
+      //   return;
+      // }
+
+      try {
+        const resultCanvas = await pixelate(options);
+        pixelatedCanvas = resultCanvas;
+
+        // ⭐ 保存像素数据
+        window.currentPixelData = resultCanvas.pixelData;
+
+        // ⭐ 保存原始像素尺寸
+        window.originalPixelWidth = resultCanvas.width;
+        window.originalPixelHeight = resultCanvas.height;
+
+        // 保存像素数据
+        window.currentPixelData = resultCanvas.pixelData;
+
+        // ⭐ 初始化显示（使用 100% 缩放）
+        renderCanvasAtZoom(1.0);
+
+        // 直接绘制初始状态
+        // const ctx = canvas.getContext('2d');
+        // canvas.width = resultCanvas.width;
+        // canvas.height = resultCanvas.height;
+        // ctx.imageSmoothingEnabled = false;
+        // ctx.drawImage(resultCanvas, 0, 0);
+        // canvas.style.display = 'block';
+
+        // // 重置缩放
+        // updateZoom(0);
+
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    pixelateButton.addEventListener('click', applyPixelation);
+    pixelWidthInput.addEventListener('input', () => {
+      if (autoPixelateEnabled) applyPixelation();
+    });
+    ditheringSelect.addEventListener('change', () => {
+      if (autoPixelateEnabled) applyPixelation();
+    });
+    ditheringStrengthInput.addEventListener('input', () => {
+      if (autoPixelateEnabled) applyPixelation();
+    });
+    paletteNameInput.addEventListener('input', () => {
+      if (autoPixelateEnabled) applyPixelation();
+    });
+    paletteSelector.addEventListener('change', () => {
+      if (autoPixelateEnabled) applyPixelation();
+    });
+
+    pixelWidthSelector.addEventListener('change', () => {
+      if (autoPixelateEnabled) applyPixelation();
+    });
+    /**
+     * Export pixelated image at pixel resolution.
+     * 
+     * This exports the image at its actual pixelated size, which is
+     * ideal for training data as it preserves the exact pixel structure
+     * without any upscaling artifacts.
+     * 
+     * OUTPUT FORMAT:
+     * - PNG format for lossless compression
+     * - Actual pixel dimensions (e.g., 32x32, 64x64)
+     * - No interpolation or smoothing applied
+     */
+    downloadPixelButton.addEventListener('click', () => {
+      if (!pixelatedCanvas) return;
+      const link = document.createElement('a');
+      link.href = pixelatedCanvas.toDataURL('image/png');
+      link.download = 'pixelated-image.png';
+      link.click();
+    });
+
+    /**
+     * Export pixelated image at original resolution.
+     * 
+     * This creates a pixelated version at the original image dimensions,
+     * useful for training models that need to understand how pixel art
+     * appears when scaled up to match source image sizes.
+     * 
+     * PROCESS:
+     * 1. Apply pixelation at low resolution
+     * 2. Scale up to original dimensions using nearest-neighbor
+     * 3. Export as PNG for training data
+     * 
+     * USE CASE:
+     * Training models to recognize pixel art patterns at various scales
+     * or to generate high-resolution outputs from pixel art inputs.
+     */
+    downloadFullButton.addEventListener('click', async () => {
+      if (!originalImageObject) return;
+
+      const pixelsWide = parseInt(pixelWidthInput.value) || 10;
+      const paletteName = paletteNameInput.value.trim();
+      const ditheringMethod = ditheringSelect.value;
+      const ditheringStrength = parseInt(ditheringStrengthInput.value);
+
+      let paletteToUse;
+      if (activeToggle && activeToggle.id === 'lospec-toggle') {
+        paletteToUse = paletteName;
+      } else {
+        paletteToUse = activePalette;
+      }
+      const options = {
+        image: originalImageObject,
+        width: pixelsWide,
+        dither: ditheringMethod,
+        strength: ditheringStrength,
+        palette: paletteToUse,
+        resolution: 'original',
+      };
+
+      try {
+        const fullCanvas = await pixelate(options);
+        const link = document.createElement('a');
+        link.href = fullCanvas.toDataURL('image/png');
+        link.download = 'full-resolution-pixelated.png';
+        link.click();
+      } catch (error) {
+        console.error(error);
+        alert('An error occurred during downloading the full-resolution image.');
+      }
+    });
+
+
+    // ⭐ 更新后的网格绘制函数
+    function drawPixelGrid(ctx, pixelWidth, pixelHeight, cellSize) {
+      // 只在缩放较大时显示网格（避免密集网格影响视觉）
+      // return;
+
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.lineWidth = 1;
+
+      // 绘制垂直线
+      for (let x = 0; x <= pixelWidth; x++) {
+        ctx.beginPath();
+        ctx.moveTo(x * cellSize, 0);
+        ctx.lineTo(x * cellSize, pixelHeight * cellSize);
+        ctx.stroke();
+      }
+
+      // 绘制水平线
+      for (let y = 0; y <= pixelHeight; y++) {
+        ctx.beginPath();
+        ctx.moveTo(0, y * cellSize);
+        ctx.lineTo(pixelWidth * cellSize, y * cellSize);
+        ctx.stroke();
+      }
+    }
+
+
+    // 全局变量
+    let selectedPixelOverlay = null;
+
+    // ⭐ 核心函数：根据缩放级别渲染像素画
+    function renderCanvasAtZoom(zoom) {
+      if (!pixelatedCanvas) return;
+
+      const pixelWidth = pixelatedCanvas.width;   // 像素画的宽度（像素数）
+      const pixelHeight = pixelatedCanvas.height; // 像素画的高度（像素数）
+      console.log(pixelHeight);
+
+
+      // ⭐ 关键：每个像素格子的显示尺寸
+      const cellSize = Math.max(1, Math.round(10 * zoom)); // 基础10px，随缩放变化
+
+      // ⭐ 计算 canvas 的真实显示尺寸
+      const displayWidth = pixelWidth * cellSize;
+      const displayHeight = pixelHeight * cellSize;
+
+      // 设置 canvas 尺寸
+      canvas.width = displayWidth;
+      canvas.height = displayHeight;
+
+      // 获取像素画的图像数据
+      const srcCtx = pixelatedCanvas.getContext('2d');
+      const imageData = srcCtx.getImageData(0, 0, pixelWidth, pixelHeight);
+
+      // 在目标 canvas 上绘制
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, displayWidth, displayHeight);
+      ctx.imageSmoothingEnabled = false;
+
+      // ⭐ 逐像素绘制，每个像素绘制成一个方块
+      for (let y = 0; y < pixelHeight; y++) {
+        for (let x = 0; x < pixelWidth; x++) {
+          const index = (y * pixelWidth + x) * 4;
+          const r = imageData.data[index];
+          const g = imageData.data[index + 1];
+          const b = imageData.data[index + 2];
+          const a = imageData.data[index + 3];
+
+          // 绘制一个填充的矩形
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a / 255})`;
+          ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+        }
+      }
+
+      // ⭐ 绘制网格线
+      drawPixelGrid(ctx, pixelWidth, pixelHeight, cellSize);
+
+      canvas.style.display = 'block';
+
+      console.log(`🔍 缩放: ${Math.round(zoom * 100)}% | 像素尺寸: ${pixelWidth}×${pixelHeight} | 单元格: ${cellSize}px | 总尺寸: ${displayWidth}×${displayHeight}px`);
+    }
+
+
+
+    //————————————
+    // ⭐ 全局变量
+    let currentZoom = 0; // 索引从 0 开始
+    const zoomLevels = [1, 1.5, 2, 3, 5, 10];
+
+    // ⭐ 更新缩放函数
+    function updateZoom(zoomIndex) {
+      if (!pixelatedCanvas) return;
+
+      // 确保索引在有效范围内
+      currentZoom = Math.max(0, Math.min(zoomLevels.length - 1, zoomIndex));
+      const zoom = zoomLevels[currentZoom];
+
+      // 应用缩放变换
+      canvas.style.transform = `scale(${zoom})`;
+
+      // 更新显示
+      document.getElementById('zoom-level').textContent = Math.round(zoom * 100) + '%';
+
+      console.log(`🔍 缩放至: ${Math.round(zoom * 100)}%`);
+    }
+
+    // ⭐ 放大按钮
+    document.getElementById('zoom-in').addEventListener('click', () => {
+      updateZoom(currentZoom + 1);
+    });
+
+    // ⭐ 缩小按钮
+    document.getElementById('zoom-out').addEventListener('click', () => {
+      updateZoom(currentZoom - 1);
+    });
+
+    // ⭐ 重置按钮
+    document.getElementById('zoom-reset').addEventListener('click', () => {
+      updateZoom(0); // 回到 100%
+    });
+
+    // ⭐ 键盘快捷键
+    document.addEventListener('keydown', (e) => {
+      if (!pixelatedCanvas) return;
+
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        updateZoom(currentZoom + 1);
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        updateZoom(currentZoom - 1);
+      } else if (e.key === 'r' || e.key === 'R' || e.key === '0') {
+        e.preventDefault();
+        updateZoom(0);
+      }
+    });
+
+    // ⭐ 修复后的点击事件
+    // canvas.addEventListener('click', function (e) {
+    //   if (!pixelatedCanvas) return;
+
+    //   const rect = canvas.getBoundingClientRect();
+    //   const zoom = zoomLevels[currentZoom];
+
+    //   // ⭐ 核心修复: 正确计算缩放后的坐标
+    //   // 1. 获取鼠标相对于canvas左上角的位置
+    //   const mouseX = e.clientX - rect.left;
+    //   const mouseY = e.clientY - rect.top;
+
+    //   // 2. 除以缩放比例,得到原始canvas坐标
+    //   const canvasX = mouseX / zoom;
+    //   const canvasY = mouseY / zoom;
+
+    //   // 3. 转换为像素坐标
+    //   const pixelX = Math.floor(canvasX / canvas.width * pixelatedCanvas.width);
+    //   const pixelY = Math.floor(canvasY / canvas.height * pixelatedCanvas.height);
+
+    //   // 边界检查
+    //   if (pixelX < 0 || pixelX >= pixelatedCanvas.width ||
+    //     pixelY < 0 || pixelY >= pixelatedCanvas.height) {
+    //     return;
+    //   }
+
+    //   // 获取颜色
+    //   const ctx = pixelatedCanvas.getContext('2d');
+    //   const pixel = ctx.getImageData(pixelX, pixelY, 1, 1).data;
+    //   const color = `#${pixel[0].toString(16).padStart(2, '0')}${pixel[1].toString(16).padStart(2, '0')}${pixel[2].toString(16).padStart(2, '0')}`;
+
+    //   console.log(`📍 位置: (${pixelX}, ${pixelY}) | 🎨 颜色: ${color} | 🔍 缩放: ${Math.round(zoom * 100)}%`);
+
+    //   // 显示颜色信息
+    //   showColorInfo(pixelX, pixelY, color, e.clientX, e.clientY);
+
+    //   // 高亮像素
+    //   highlightPixel(pixelX, pixelY);
+
+    //   // 自动复制颜色
+    //   navigator.clipboard.writeText(color).then(() => {
+    //     console.log(`✓ 已复制: ${color}`);
+    //   });
+    // });
+
+
+    // ⭐ 精确的点击处理
+    canvas.addEventListener('click', function (e) {
+      if (!pixelatedCanvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const zoom = zoomLevels[currentZoom];
+
+      // ⭐ 步骤1: 获取鼠标相对于canvas可视区域的位置
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      // ⭐ 步骤2: 计算canvas的实际渲染尺寸(缩放后)
+      const scaledWidth = rect.width;
+      const scaledHeight = rect.height;
+
+      // ⭐ 步骤3: 将鼠标位置映射到原始canvas坐标
+      // rect.width 是缩放后的尺寸, canvas.width 是原始尺寸
+      const canvasX = (mouseX / scaledWidth) * canvas.width;
+      const canvasY = (mouseY / scaledHeight) * canvas.height;
+
+      // ⭐ 步骤4: 转换为像素坐标
+      const pixelX = Math.floor(canvasX / canvas.width * pixelatedCanvas.width);
+      const pixelY = Math.floor(canvasY / canvas.height * pixelatedCanvas.height);
+
+      // 调试日志
+      console.log({
+        mouse: { x: mouseX, y: mouseY },
+        rect: { w: scaledWidth, h: scaledHeight },
+        canvas: { x: canvasX, y: canvasY, w: canvas.width, h: canvas.height },
+        pixel: { x: pixelX, y: pixelY },
+        zoom: zoom
+      });
+
+      // 边界检查
+      if (pixelX < 0 || pixelX >= pixelatedCanvas.width ||
+        pixelY < 0 || pixelY >= pixelatedCanvas.height) {
+        console.log('❌ 超出边界');
+        return;
+      }
+
+      // 获取颜色
+      const ctx = pixelatedCanvas.getContext('2d');
+      const pixel = ctx.getImageData(pixelX, pixelY, 1, 1).data;
+      const color = `#${pixel[0].toString(16).padStart(2, '0')}${pixel[1].toString(16).padStart(2, '0')}${pixel[2].toString(16).padStart(2, '0')}`;
+
+      console.log(`✅ 选中像素: (${pixelX}, ${pixelY}) | 颜色: ${color}`);
+
+      // 显示信息
+      showColorInfo(pixelX, pixelY, color, e.clientX, e.clientY);
+      highlightPixel(pixelX, pixelY);
+
+      // 复制颜色
+      navigator.clipboard.writeText(color).then(() => {
+        console.log(`✓ 已复制: ${color}`);
+      }).catch(err => {
+        console.error('复制失败:', err);
+      });
+    });
+    // 存储颜色分组的数组数据
+    const colorDataInput = [
+      {
+        group: 1,
+        colors: [
+          "#051616", "#414545", "#808282", "#BEBFBF", "#FEFFFF", "#F9F6E9"
+        ]
+      },
+      {
+        group: 2,
+        colors: [
+          "#CF354D", "#EE6F72", "#A6263D", "#F5ACA6", "#C98483", "#A35D5E",
+          "#69313B", "#E7D5D5", "#C0ACAB", "#755E5E"
+        ]
+      },
+      {
+        group: 3,
+        colors: [
+          "#E95E2B", "#F98358", "#AB4226", "#FEBA9F", "#D9937C", "#AF6C58",
+          "#753B31", "#E9D5D0", "#C1ACA6", "#755E59"
+        ]
+      },
+      {
+        group: 4,
+        colors: [
+          "#F49E16", "#FEAE3B", "#B16F16", "#FECE92", "#DAA76D", "#B3814B",
+          "#795126", "#F5E4CE", "#CDBCA9", "#806F5E"
+        ]
+      },
+      {
+        group: 5,
+        colors: [
+          "#EDCA16", "#F9D838", "#B39416", "#FAE791", "#D3BE6F", "#AB954B",
+          "#756326", "#EEE7C7", "#C6BFA2", "#787259"
+        ]
+      },
+      {
+        group: 6,
+        colors: [
+          "#A8BC16", "#B6C931", "#758616", "#D8DF93", "#ADB76D", "#85914B",
+          "#535E2B", "#E6E9C7", "#BCC2A3", "#6E745D"
+        ]
+      },
+      {
+        group: 7,
+        colors: [
+          "#05A25D", "#41B97B", "#057447", "#9CDAAD", "#76B28B", "#4F8969",
+          "#245640", "#C3E0CC", "#9DB7A6", "#53695D"
+        ]
+      },
+      {
+        group: 8,
+        colors: [
+          "#058781", "#05ABA0", "#056966", "#7ECDC2", "#55A49C", "#2B7E78",
+          "#054B4B", "#BEE0DA", "#98B7B2", "#4E6B66"
+        ]
+      },
+      {
+        group: 9,
+        colors: [
+          "#05729C", "#0599BA", "#055878", "#79BBCA", "#5193A5", "#246D7F",
+          "#05495B", "#C6DDE2", "#9EB5BA", "#4F676F"
+        ]
+      },
+      {
+        group: 10,
+        colors: [
+          "#055EA6", "#2B83C1", "#054782", "#83A8C9", "#5D80A1", "#365B7F",
+          "#193B56", "#C1CDD5", "#9BA6B0", "#4C5967"
+        ]
+      },
+      {
+        group: 11,
+        colors: [
+          "#534DA1", "#7577BD", "#3E387E", "#A2A0C7", "#787AA1", "#55567E",
+          "#333555", "#C9CAD5", "#A2A3B0", "#565869"
+        ]
+      },
+      {
+        group: 12,
+        colors: [
+          "#813D8B", "#A167A9", "#602B6C", "#B89BB9", "#907395", "#6C4D73",
+          "#432E4B", "#CFC9D1", "#ABA1AC", "#605665"
+        ]
+      },
+      {
+        group: 13,
+        colors: [
+          "#AD356F", "#CF6B8F", "#862658", "#D9A1B4", "#B47A8C", "#8B5367",
+          "#60354B", "#E4D5DA", "#BCADB1", "#725E66"
+        ]
+      }
+    ];
+
+    // 初始化颜色到分组和位置的映射
+    const colorToGroupMap = {};
+
+    // 遍历数组数据，构建映射
+    colorDataInput.forEach(groupObject => {
+      const groupNumber = groupObject.group;
+      groupObject.colors.forEach((colorHex, index) => {
+        // 存储一个包含分组和位置的对象
+        colorToGroupMap[colorHex.toUpperCase()] = {
+          group: groupNumber,
+          position: index + 1 // 位置从1开始计数
+        };
+      });
+    });
+
+    // ⭐ 显示颜色信息（使用固定定位）- 已修改
+    function showColorInfo(pixelX, pixelY, color, mouseX, mouseY) {
+      const infoBox = document.getElementById('color-info');
+      const colorPreview = document.getElementById('color-preview');
+      const colorText = document.getElementById('color-text');
+
+      // 将颜色转换为大写以便查询映射
+      const hexColor = color.toUpperCase();
+      // 从映射中获取包含分组和位置的数据
+      const groupData = colorToGroupMap[hexColor];
+
+      // 格式化分组和位置信息
+      const groupInfoHtml = groupData !== undefined
+        ? `<strong>分组:</strong> [${groupData.group}, ${groupData.position}]<br>`
+        : '';
+
+      // 设置颜色预览
+      colorPreview.style.backgroundColor = hexColor;
+
+      // 设置文本信息，包含分组和位置信息
+      colorText.innerHTML = `
+    <strong>坐标:</strong> (${pixelX}, ${pixelY})<br>
+    <strong>颜色:</strong> ${hexColor}<br>
+    ${groupInfoHtml}
+    <span style="color: #4CAF50;">✓ 已复制到剪贴板</span>
+  `;
+
+      // ⭐ 使用鼠标的屏幕坐标定位（fixed定位）
+      let left = mouseX + 15;
+      let top = mouseY + 15;
+
+      // 防止超出视口右边界
+      if (left + 220 > window.innerWidth) {
+        left = mouseX - 235;
+      }
+
+      // 防止超出视口下边界
+      if (top + 100 > window.innerHeight) {
+        top = mouseY - 115;
+      }
+
+      infoBox.style.left = left + 'px';
+      infoBox.style.top = top + 'px';
+      infoBox.style.display = 'flex';
+
+      // 3秒后自动隐藏 (如果需要，取消注释)
+      // setTimeout(() => {
+      //   infoBox.style.display = 'none';
+      // }, 3000);
+    }
+    // ⭐ 显示颜色信息（使用固定定位）
+    //   function showColorInfo(pixelX, pixelY, color, mouseX, mouseY) {
+    //     const infoBox = document.getElementById('color-info');
+    //     const colorPreview = document.getElementById('color-preview');
+    //     const colorText = document.getElementById('color-text');
+
+    //     // 设置颜色预览
+    //     colorPreview.style.backgroundColor = color;
+
+    //     // 设置文本信息
+    //     colorText.innerHTML = `
+    //   <strong>坐标:</strong> (${pixelX}, ${pixelY})<br>
+    //   <strong>颜色:</strong> ${color.toUpperCase()}<br>
+    //   <span style="color: #4CAF50;">✓ 已复制到剪贴板</span>
+    // `;
+
+    //     // ⭐ 使用鼠标的屏幕坐标定位（fixed定位）
+    //     let left = mouseX + 15;
+    //     let top = mouseY + 15;
+
+    //     // 防止超出视口右边界
+    //     if (left + 220 > window.innerWidth) {
+    //       left = mouseX - 235;
+    //     }
+
+    //     // 防止超出视口下边界
+    //     if (top + 100 > window.innerHeight) {
+    //       top = mouseY - 115;
+    //     }
+
+    //     infoBox.style.left = left + 'px';
+    //     infoBox.style.top = top + 'px';
+    //     infoBox.style.display = 'flex';
+
+    //     // 3秒后自动隐藏
+    //     // setTimeout(() => {
+    //     //   infoBox.style.display = 'none';
+    //     // }, 3000);
+    //   }
+
+    // ⭐ 高亮选中的像素（适配缩放）
+    // function highlightPixel(pixelX, pixelY) {
+    //   const displayCtx = canvas.getContext('2d');
+    //   const cellWidth = canvas.width / pixelatedCanvas.width;
+    //   const cellHeight = canvas.height / pixelatedCanvas.height;
+
+    //   // 重新绘制图像
+    //   displayCtx.clearRect(0, 0, canvas.width, canvas.height);
+    //   displayCtx.imageSmoothingEnabled = false;
+    //   displayCtx.drawImage(pixelatedCanvas, 0, 0, canvas.width, canvas.height);
+
+    //   // 重新绘制网格
+    //   // drawPixelGrid(displayCtx, pixelatedCanvas, canvas.width, canvas.height);
+
+    //   drawPixelGrid(displayCtx, pixelatedCanvas.width, pixelatedCanvas.height, cellWidth);
+
+    //   // 绘制高亮框
+    //   displayCtx.strokeStyle = '#FFD700';
+    //   displayCtx.lineWidth = 3;
+    //   displayCtx.strokeRect(
+    //     pixelX * cellWidth,
+    //     pixelY * cellHeight,
+    //     cellWidth,
+    //     cellHeight
+    //   );
+
+    //   // 半透明覆盖
+    //   displayCtx.fillStyle = 'rgba(255, 215, 0, 0.2)';
+    //   displayCtx.fillRect(
+    //     pixelX * cellWidth,
+    //     pixelY * cellHeight,
+    //     cellWidth,
+    //     cellHeight
+    //   );
+    // }
+
+
+    // ⭐ 修复高亮显示
+    function highlightPixel(pixelX, pixelY) {
+      const displayCtx = canvas.getContext('2d');
+      const cellWidth = canvas.width / pixelatedCanvas.width;
+      const cellHeight = canvas.height / pixelatedCanvas.height;
+
+      // 重新绘制图像
+      displayCtx.clearRect(0, 0, canvas.width, canvas.height);
+      displayCtx.imageSmoothingEnabled = false;
+      displayCtx.drawImage(pixelatedCanvas, 0, 0, canvas.width, canvas.height);
+
+      // ⭐ 修复: 正确绘制网格
+      drawPixelGrid(displayCtx, pixelatedCanvas.width, pixelatedCanvas.height, cellWidth);
+
+      // 计算高亮位置
+      const x = pixelX * cellWidth;
+      const y = pixelY * cellHeight;
+
+      // 绘制高亮框
+      displayCtx.strokeStyle = '#FFD700';
+      displayCtx.lineWidth = Math.max(2, cellWidth * 0.1); // 根据格子大小调整线宽
+      displayCtx.strokeRect(x, y, cellWidth, cellHeight);
+
+      // 半透明覆盖
+      displayCtx.fillStyle = 'rgba(255, 215, 0, 0.3)';
+      displayCtx.fillRect(x, y, cellWidth, cellHeight);
+
+      console.log(`🎯 高亮位置: x=${x.toFixed(1)}, y=${y.toFixed(1)}, 格子大小=${cellWidth.toFixed(1)}×${cellHeight.toFixed(1)}`);
+    }
+
+
+    // 点击页面其他地方隐藏信息框
+    document.addEventListener('click', function (e) {
+      if (e.target !== canvas && !e.target.closest('#zoom-controls')) {
+        const infoBox = document.getElementById('color-info');
+        if (infoBox) {
+          infoBox.style.display = 'none';
+        }
+      }
+    });
+
+
+    // 添加导出按钮功能
+    function exportPixelData() {
+      if (!window.currentPixelData) {
+        alert('请先生成像素画');
+        return;
+      }
+
+      const dataStr = JSON.stringify(window.currentPixelData, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'pixel-art-data.json';
+      a.click();
+    }
+  </script>
+</body>
+
+</html>

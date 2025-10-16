@@ -1,0 +1,12 @@
+{
+  "name": "image-to-pixel-batch",
+  "version": "1.0.0",
+  "description": "Simple batch pixelation script for converting images to pixel art",
+  "main": "pixelate.js",
+  "scripts": {
+    "pixelate": "node pixelate.js"
+  },
+  "dependencies": {
+    "sharp": "^0.33.0"
+  }
+}

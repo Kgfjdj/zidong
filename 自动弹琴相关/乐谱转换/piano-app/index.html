@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网页钢琴 - MIDI支持</title>
+    <link rel="stylesheet" href="style.css">
+
+</head>
+
+<body>
+    <div class="container">
+        <h1>🎹 网页钢琴</h1>
+
+        <div class="controls">
+            <a href="midi-editor.html">
+                <button>🎼 打开 MIDI 编辑器</button>
+            </a>
+            <a href="converter.html">
+                <button>🎼 打开 MIDI 转换器</button>
+            </a>
+
+            <div class="midi-controls">
+                <input type="file" id="midiFile" accept=".mid,.midi">
+                <button id="playMidi">播放MIDI</button>
+                <button id="stopMidi">停止</button>
+                <label>
+                    速度: <input type="range" id="speedControl" min="0.5" max="2" step="0.1" value="1">
+                    <span id="speedValue">1.0x</span>
+                </label>
+            </div>
+
+            <div class="volume-control">
+                <label>
+                    音量: <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="0.5">
+                    <span id="volumeValue">50%</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="piano-container">
+            <div id="piano" class="piano"></div>
+        </div>
+
+        <div class="info">
+            <p>使用鼠标点击或键盘弹奏 | 上传MIDI文件自动演奏</p>
+            <p id="currentNote"></p>
+        </div>
+    </div>
+    <script src="https://surikov.github.io/webaudiofont/npm/dist/WebAudioFontPlayer.js"></script>
+    <script src="https://surikov.github.io/webaudiofontdata/sound/0250_SoundBlasterOld_sf2.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>
